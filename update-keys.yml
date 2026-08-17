@@ -1,0 +1,36 @@
+name: Update AI Keys
+
+on:
+  schedule:
+    # تشغيل كل يوم الساعة 3 صباحاً UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    # يسمح بالتشغيل اليدوي من GitHub
+
+jobs:
+  update-keys:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Update expired keys and fetch new ones
+        run: node scripts/fetch-keys.js
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "فشل تحديث المفاتيح. تحقق من السجلات."
+          # يمكن إضافة إرسال إشعار هنا (Slack, Email...)
