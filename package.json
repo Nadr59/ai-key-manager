@@ -1,0 +1,16 @@
+{
+  "name": "ai-key-manager",
+  "version": "1.0.0",
+  "description": "Backend آمن لإدارة مفاتيح AI وتوزيعها لتطبيقات Android",
+  "main": "api/ask.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
