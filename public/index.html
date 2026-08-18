@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Key Manager - لوحة التحكم</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+.container { max-width: 900px; margin: 0 auto; padding: 20px; }
+h1 { text-align: center; padding: 24px 0; font-size: 24px; color: #38bdf8; }
+.login-box { background: #1e293b; border-radius: 16px; padding: 32px; max-width: 400px; margin: 80px auto; text-align: center; }
+.login-box h2 { margin-bottom: 20px; color: #f1f5f9; }
+.login-box input { width: 100%; padding: 12px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 14px; margin-bottom: 12px; }
+.login-box button { width: 100%; padding: 12px; border: none; border-radius: 8px; background: #3b82f6; color: white; font-size: 14px; cursor: pointer; }
+.login-box button:hover { background: #2563eb; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: #1e293b; border-radius: 12px; padding: 16px; text-align: center; }
+.stat-card .number { font-size: 28px; font-weight: bold; color: #38bdf8; }
+.stat-card .label { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+.section { background: #1e293b; border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+.section h3 { margin-bottom: 16px; font-size: 16px; color: #f1f5f9; display: flex; align-items: center; gap: 8px; }
+.section h3 span { font-size: 20px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px; text-align: right; border-bottom: 1px solid #334155; font-size: 13px; }
+th { color: #94a3b8; font-weight: normal; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+.badge-green { background: #064e3b; color: #34d399; }
+.badge-red { background: #7f1d1d; color: #f87171; }
+.badge-blue { background: #1e3a5f; color: #60a5fa; }
+.btn { padding: 6px 12px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; margin: 2px; }
+.btn-add { background: #3b82f6; color: white; }
+.btn-del { background: #ef4444; color: white; }
+.btn-toggle { background: #f59e0b; color: white; }
+.form-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.form-row input, .form-row select { padding: 8px; border: 1px solid #334155; border-radius: 6px; background: #0f172a; color: #e2e8f0; font-size: 13px; flex: 1; min-width: 120px; }
+.form-row button { padding: 8px 16px; }
+.hidden { display: none; }
+.error-msg { color: #f87171; text-align: center; margin-top: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="loginView" class="login-box">
+  <h2>🔐 لوحة التحكم</h2>
+  <input type="password" id="adminKeyInput" placeholder="Admin Key" onkeypress="if(event.key==='Enter')doLogin()">
+  <button onclick="doLogin()">دخول</button>
+  <div id="loginError" class="error-msg hidden"></div>
+</div>
+
+<div id="dashboardView" class="container hidden">
+  <h1>🎯 AI Key Manager</h1>
+
+  <div id="statsContainer" class="stats"></div>
+
+  <!-- ═══ المفاتيح ═══ -->
+  <div class="section">
+    <h3><span>🔑</span> مفاتيح API</h3>
+    <div class="form-row">
+      <input id="newKey" placeholder="API Key">
+      <select id="newProvider">
+        <option value="mistral">Mistral</option>
+        <option value="groq">Groq</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="orcarouter">OrcaRouter</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+        <option value="custom">Custom</option>
+      </select>
+      <input id="newModel" placeholder="Model (mistral-large-latest)">
+      <button class="btn btn-add" onclick="addKey()">إضافة</button>
+    </div>
+    <div id="keysError" class="error-msg hidden"></div>
+    <table>
+      <thead><tr><th>المزود</th><th>الموديل</th><th>الاستخدام</th><th>الحالة</th><th>آخر استخدام</th><th>إجراءات</th></tr></thead>
+      <tbody id="keysTable"></tbody>
+    </table>
+  </div>
+
+  <!-- ═══ التطبيقات ═══ -->
+  <div class="section">
+    <h3><span>📱</span> التطبيقات المسجلة</h3>
+    <div class="form-row">
+      <input id="newAppId" placeholder="app-id (مثال: my-app-01)">
+      <input id="newAppName" placeholder="اسم التطبيق">
+      <input id="newAppLimit" placeholder="الحد اليومي" type="number" value="100">
+      <button class="btn btn-add" onclick="addApp()">إضافة</button>
+    </div>
+    <table>
+      <thead><tr><th>المعرف</th><th>الاسم</th><th>الحد اليومي</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+      <tbody id="appsTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let ADMIN_KEY = '';
+
+function doLogin() {
+  ADMIN_KEY = document.getElementById('adminKeyInput').value.trim();
+  if (!ADMIN_KEY) return;
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  try {
+    const res = await fetch('/api/dashboard', { headers: { 'x-admin-key': ADMIN_KEY } });
+    if (res.status === 401) {
+      document.getElementById('loginError').textContent = 'مفتاح غير صحيح';
+      document.getElementById('loginError').classList.remove('hidden');
+      return;
+    }
+    const data = await res.json();
+    document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('dashboardView').classList.remove('hidden');
+    renderStats(data.stats);
+    renderKeys(data.keys);
+    renderApps(data.apps);
+  } catch (e) {
+    document.getElementById('loginError').textContent = 'خطأ: ' + e.message;
+    document.getElementById('loginError').classList.remove('hidden');
+  }
+}
+
+function renderStats(stats) {
+  document.getElementById('statsContainer').innerHTML = `
+    <div class="stat-card"><div class="number">${stats.activeKeys}</div><div class="label">مفاتيح نشطة</div></div>
+    <div class="stat-card"><div class="number">${stats.totalApps}</div><div class="label">تطبيقات مسجلة</div></div>
+    <div class="stat-card"><div class="number">${stats.todayRequests}</div><div class="label">طلبات اليوم</div></div>
+    <div class="stat-card"><div class="number">${stats.totalRequests}</div><div class="label">إجمالي الطلبات</div></div>
+  `;
+}
+
+function renderKeys(keys) {
+  document.getElementById('keysTable').innerHTML = keys.map(k => `
+    <tr>
+      <td><span class="badge badge-blue">${k.provider}</span></td>
+      <td>${k.model}</td>
+      <td>${k.use_count || 0}</td>
+      <td>${k.active ? '<span class="badge badge-green">نشط</span>' : '<span class="badge badge-red">معطل</span>'}</td>
+      <td>${k.last_used ? new Date(k.last_used).toLocaleDateString('ar') : 'لم يُستخدم'}</td>
+      <td>
+        <button class="btn btn-toggle" onclick="toggleKey('${k.id}', ${!k.active})">${k.active ? 'تعطيل' : 'تفعيل'}</button>
+        <button class="btn btn-del" onclick="deleteKey('${k.id}')">حذف</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderApps(apps) {
+  document.getElementById('appsTable').innerHTML = apps.map(a => `
+    <tr>
+      <td><code>${a.id}</code></td>
+      <td>${a.app_name}</td>
+      <td>${a.daily_limit}</td>
+      <td>${a.active ? '<span class="badge badge-green">نشط</span>' : '<span class="badge badge-red">معطل</span>'}</td>
+      <td>
+        <button class="btn btn-del" onclick="deleteApp('${a.id}')">حذف</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function apiCall(action, body) {
+  const res = await fetch('/api/dashboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-key': ADMIN_KEY },
+    body: JSON.stringify({ action, ...body })
+  });
+  const data = await res.json();
+  if (data.error) { alert('خطأ: ' + data.error); return; }
+  loadDashboard();
+}
+
+function addKey() {
+  const key = document.getElementById('newKey').value.trim();
+  const provider = document.getElementById('newProvider').value;
+  const model = document.getElementById('newModel').value.trim() || 'mistral-large-latest';
+  if (!key) { alert('أدخل المفتاح'); return; }
+  apiCall('add_key', { key, provider, model });
+  document.getElementById('newKey').value = '';
+}
+
+function toggleKey(id, active) { apiCall('update_key', { id, active }); }
+function deleteKey(id) { if (confirm('حذف المفتاح؟')) apiCall('delete_key', { id }); }
+
+function addApp() {
+  const appId = document.getElementById('newAppId').value.trim();
+  const appName = document.getElementById('newAppName').value.trim();
+  const dailyLimit = parseInt(document.getElementById('newAppLimit').value) || 100;
+  if (!appId || !appName) { alert('أدخل معرف واسم التطبيق'); return; }
+  apiCall('add_app', { appId, appName, dailyLimit });
+  document.getElementById('newAppId').value = '';
+  document.getElementById('newAppName').value = '';
+}
+
+function deleteApp(appId) { if (confirm('حذف التطبيق؟')) apiCall('delete_app', { appId }); }
+</script>
+</body>
+</html>
