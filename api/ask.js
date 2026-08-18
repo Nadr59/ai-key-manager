@@ -7,10 +7,9 @@ module.exports = async (req, res) => {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // ═══ GET: حالة الخدمة ═══
   if (req.method === 'GET') {
     try {
-      const { data: keys } = await supabase.from('api_keys').select('id, provider, model, active, use_count, last_used').eq('active', true);
+      const { data: keys } = await supabase.from('api_keys').select('id, provider, model, base_url, active, use_count, last_used').eq('active', true);
       const { data: apps } = await supabase.from('allowed_apps').select('id, app_name, daily_limit, active').eq('active', true);
       return res.status(200).json({
         status: 'online',
@@ -24,7 +23,6 @@ module.exports = async (req, res) => {
     }
   }
 
-  // ═══ POST: طلب تحليل ═══
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
@@ -42,7 +40,6 @@ module.exports = async (req, res) => {
       return res.status(429).json({ error: 'Daily limit exceeded', limit: app.daily_limit });
     }
 
-    // ═══ جلب كل المفاتيح النشطة ═══
     const { data: allKeys } = await supabase
       .from('api_keys')
       .select('*')
@@ -53,7 +50,6 @@ module.exports = async (req, res) => {
       return res.status(503).json({ error: 'No available keys' });
     }
 
-    // ═══ محاولة كل مفتاح حتى يعمل واحد ═══
     let lastError = null;
     let usedKey = null;
     let aiResponse = null;
@@ -76,14 +72,9 @@ module.exports = async (req, res) => {
     }
 
     if (!aiResponse || !usedKey) {
-      return res.status(503).json({
-        error: 'All keys failed',
-        lastError: lastError,
-        tried: allKeys.length
-      });
+      return res.status(503).json({ error: 'All keys failed', lastError: lastError, tried: allKeys.length });
     }
 
-    // ═══ تحديث العدادات ═══
     await supabase
       .from('api_keys')
       .update({ use_count: (usedKey.use_count || 0) + 1, last_used: new Date().toISOString() })
@@ -110,12 +101,11 @@ module.exports = async (req, res) => {
   }
 };
 
-// ═══ استدعاء خدمات AI ═══
 async function callAI(apiKey, prompt) {
   const headers = { 'Content-Type': 'application/json' };
   let url, body;
 
-  // ─── Google Gemini ───
+  // Google Gemini
   if (apiKey.provider === 'gemini') {
     url = 'https://generativelanguage.googleapis.com/v1beta/models/' + apiKey.model + ':generateContent?key=' + apiKey.key;
     body = JSON.stringify({
@@ -123,7 +113,7 @@ async function callAI(apiKey, prompt) {
       generationConfig: { temperature: 0.3, maxOutputTokens: 2000 }
     });
   }
-  // ─── Cerebras ───
+  // Cerebras
   else if (apiKey.provider === 'cerebras') {
     url = 'https://api.cerebras.ai/v1/chat/completions';
     headers['Authorization'] = 'Bearer ' + apiKey.key;
@@ -134,7 +124,7 @@ async function callAI(apiKey, prompt) {
       temperature: 0.3
     });
   }
-  // ─── SambaNova ───
+  // SambaNova
   else if (apiKey.provider === 'sambanova') {
     url = 'https://api.sambanova.ai/v1/chat/completions';
     headers['Authorization'] = 'Bearer ' + apiKey.key;
@@ -145,7 +135,7 @@ async function callAI(apiKey, prompt) {
       temperature: 0.3
     });
   }
-  // ─── Hugging Face ───
+  // Hugging Face
   else if (apiKey.provider === 'huggingface') {
     url = 'https://api-inference.huggingface.co/models/' + apiKey.model;
     headers['Authorization'] = 'Bearer ' + apiKey.key;
@@ -154,7 +144,7 @@ async function callAI(apiKey, prompt) {
       parameters: { max_new_tokens: 2000, temperature: 0.3 }
     });
   }
-  // ─── المزودات المتوافقة مع OpenAI ───
+  // OpenAI-compatible (groq, openrouter, mistral, openai, custom)
   else {
     headers['Authorization'] = 'Bearer ' + apiKey.key;
 
@@ -164,13 +154,20 @@ async function callAI(apiKey, prompt) {
       case 'orcarouter': url = 'https://api.orcarouter.ai/v1/chat/completions'; break;
       case 'mistral':    url = 'https://api.mistral.ai/v1/chat/completions'; break;
       case 'openai':     url = 'https://api.openai.com/v1/chat/completions'; break;
-      case 'custom':     url = (apiKey.model || '').replace(/\/$/, '') + '/v1/chat/completions'; break;
+      case 'custom':
+        // ═══ استخدم base_url إذا موجود ═══
+        if (apiKey.base_url) {
+          url = apiKey.base_url.replace(/\/$/, '') + '/v1/chat/completions';
+        } else {
+          url = (apiKey.model || '').replace(/\/$/, '') + '/v1/chat/completions';
+        }
+        break;
       default:
         throw new Error('Unknown provider: ' + apiKey.provider);
     }
 
     body = JSON.stringify({
-      model: apiKey.provider === 'custom' ? undefined : apiKey.model,
+      model: apiKey.model,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2000,
       temperature: 0.3,
@@ -184,12 +181,7 @@ async function callAI(apiKey, prompt) {
   const timeout = setTimeout(() => controller.abort(), 90000);
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body,
-      signal: controller.signal
-    });
+    const response = await fetch(url, { method: 'POST', headers, body, signal: controller.signal });
     clearTimeout(timeout);
 
     if (!response.ok) {
@@ -198,15 +190,9 @@ async function callAI(apiKey, prompt) {
     }
 
     const data = await response.json();
-
-    // OpenAI-compatible format
     if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
-    // Gemini format
     if (data.candidates?.[0]?.content?.parts?.[0]?.text) return data.candidates[0].content.parts[0].text;
-    // Hugging Face format (text generation)
     if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text;
-    // Hugging Face format (chat)
-    if (data.choices?.[0]?.text) return data.choices[0].text;
 
     throw new Error('Unknown response format');
   } catch (e) {
