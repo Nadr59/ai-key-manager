@@ -42,7 +42,7 @@ module.exports = async (req, res) => {
       return res.status(429).json({ error: 'Daily limit exceeded', limit: app.daily_limit });
     }
 
-    // ═══ جلب كل المفاتيح النشطة مرتبة ═══
+    // ═══ جلب كل المفاتيح النشطة ═══
     const { data: allKeys } = await supabase
       .from('api_keys')
       .select('*')
@@ -59,7 +59,6 @@ module.exports = async (req, res) => {
     let aiResponse = null;
 
     for (const apiKey of allKeys) {
-      // تخطي المفاتيح المنتهية
       if (apiKey.expires_at && new Date(apiKey.expires_at) < new Date()) {
         await supabase.from('api_keys').update({ active: false }).eq('id', apiKey.id);
         continue;
@@ -113,16 +112,52 @@ module.exports = async (req, res) => {
 
 // ═══ استدعاء خدمات AI ═══
 async function callAI(apiKey, prompt) {
-  const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey.key };
+  const headers = { 'Content-Type': 'application/json' };
   let url, body;
 
+  // ─── Google Gemini ───
   if (apiKey.provider === 'gemini') {
     url = 'https://generativelanguage.googleapis.com/v1beta/models/' + apiKey.model + ':generateContent?key=' + apiKey.key;
     body = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.3, maxOutputTokens: 2000 }
     });
-  } else {
+  }
+  // ─── Cerebras ───
+  else if (apiKey.provider === 'cerebras') {
+    url = 'https://api.cerebras.ai/v1/chat/completions';
+    headers['Authorization'] = 'Bearer ' + apiKey.key;
+    body = JSON.stringify({
+      model: apiKey.model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2000,
+      temperature: 0.3
+    });
+  }
+  // ─── SambaNova ───
+  else if (apiKey.provider === 'sambanova') {
+    url = 'https://api.sambanova.ai/v1/chat/completions';
+    headers['Authorization'] = 'Bearer ' + apiKey.key;
+    body = JSON.stringify({
+      model: apiKey.model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2000,
+      temperature: 0.3
+    });
+  }
+  // ─── Hugging Face ───
+  else if (apiKey.provider === 'huggingface') {
+    url = 'https://api-inference.huggingface.co/models/' + apiKey.model;
+    headers['Authorization'] = 'Bearer ' + apiKey.key;
+    body = JSON.stringify({
+      inputs: prompt,
+      parameters: { max_new_tokens: 2000, temperature: 0.3 }
+    });
+  }
+  // ─── المزودات المتوافقة مع OpenAI ───
+  else {
+    headers['Authorization'] = 'Bearer ' + apiKey.key;
+
     switch (apiKey.provider) {
       case 'groq':       url = 'https://api.groq.com/openai/v1/chat/completions'; break;
       case 'openrouter': url = 'https://openrouter.ai/api/v1/chat/completions'; break;
@@ -133,6 +168,7 @@ async function callAI(apiKey, prompt) {
       default:
         throw new Error('Unknown provider: ' + apiKey.provider);
     }
+
     body = JSON.stringify({
       model: apiKey.provider === 'custom' ? undefined : apiKey.model,
       messages: [{ role: 'user', content: prompt }],
@@ -145,7 +181,7 @@ async function callAI(apiKey, prompt) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const timeout = setTimeout(() => controller.abort(), 90000);
 
   try {
     const response = await fetch(url, {
@@ -162,8 +198,16 @@ async function callAI(apiKey, prompt) {
     }
 
     const data = await response.json();
+
+    // OpenAI-compatible format
     if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+    // Gemini format
     if (data.candidates?.[0]?.content?.parts?.[0]?.text) return data.candidates[0].content.parts[0].text;
+    // Hugging Face format (text generation)
+    if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text;
+    // Hugging Face format (chat)
+    if (data.choices?.[0]?.text) return data.choices[0].text;
+
     throw new Error('Unknown response format');
   } catch (e) {
     clearTimeout(timeout);
