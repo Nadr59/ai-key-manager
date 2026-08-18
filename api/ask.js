@@ -40,7 +40,10 @@ async function callAI(apiKey, prompt) {
 
   if (apiKey.provider === 'gemini') {
     url = 'https://generativelanguage.googleapis.com/v1beta/models/' + apiKey.model + ':generateContent?key=' + apiKey.key;
-    body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] });
+    body = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 2000 }
+    });
   } else {
     switch (apiKey.provider) {
       case 'groq':       url = 'https://api.groq.com/openai/v1/chat/completions'; break;
@@ -51,7 +54,15 @@ async function callAI(apiKey, prompt) {
       default:
         throw new Error('Unknown provider: ' + apiKey.provider);
     }
-    body = JSON.stringify({ model: apiKey.model, messages: [{ role: 'user', content: prompt }], max_tokens: 1000 });
+    body = JSON.stringify({
+      model: apiKey.model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2000,
+      temperature: 0.3,
+      top_p: 0.9,
+      frequency_penalty: 0.5,
+      presence_penalty: 0.3
+    });
   }
 
   const response = await fetch(url, { method: 'POST', headers, body });
