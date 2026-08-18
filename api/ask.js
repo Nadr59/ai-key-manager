@@ -33,22 +33,33 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 };
+
 async function callAI(apiKey, prompt) {
   const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey.key };
   let url, body;
+
   if (apiKey.provider === 'gemini') {
     url = 'https://generativelanguage.googleapis.com/v1beta/models/' + apiKey.model + ':generateContent?key=' + apiKey.key;
     body = JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] });
   } else {
     switch (apiKey.provider) {
-      case 'groq': url = 'https://api.groq.com/openai/v1/chat/completions'; break;
+      case 'groq':       url = 'https://api.groq.com/openai/v1/chat/completions'; break;
       case 'openrouter': url = 'https://openrouter.ai/api/v1/chat/completions'; break;
-      default: url = 'https://api.openai.com/v1/chat/completions';
+      case 'orcarouter': url = 'https://api.orcarouter.ai/v1/chat/completions'; break;
+      case 'mistral':    url = 'https://api.mistral.ai/v1/chat/completions'; break;
+      case 'openai':     url = 'https://api.openai.com/v1/chat/completions'; break;
+      default:
+        throw new Error('Unknown provider: ' + apiKey.provider);
     }
     body = JSON.stringify({ model: apiKey.model, messages: [{ role: 'user', content: prompt }], max_tokens: 1000 });
   }
+
   const response = await fetch(url, { method: 'POST', headers, body });
-  if (!response.ok) throw new Error('AI API error ' + response.status);
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error('AI API error ' + response.status + ': ' + errText.slice(0, 200));
+  }
+
   const data = await response.json();
   if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
   if (data.candidates?.[0]?.content?.parts?.[0]?.text) return data.candidates[0].content.parts[0].text;
